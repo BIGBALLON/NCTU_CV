@@ -4,29 +4,41 @@
 #include <iostream>
 #include <string>
 #include <cmath>
+
+/* namespace */
 using namespace cv;
 using namespace std;
 
+/* Global variable */
 const int PIC_MAX_NUM = 6;
 int COL_MAX_NUM = 0;
 int ROW_MAX_NUM = 0;
 string pic_name = "bunny";
-string light_file;
+string light_file = "";
 
+/* Matrix variable */
 Mat imgs[6];
 Mat lightsource, intensity;
 Mat pseudo, b, normal, depth;
 
-bool load_light_source();
-void calc_intensity();
-void calc_normal();
-void output();
-void calc_depth();
-inline void calc_b();
-void pseudo_inverse();
-bool load_img();
-void print_mat(Mat mat);
-bool redirection(int argc, char* argv[]);
+/* Matrix calculation */
+void calc_intensity();                    // calculate intensity
+void calc_normal();                       // calculate normal
+void calc_depth();                        // calculate depth
+inline void calc_b();                     // calculate b
+void pseudo_inverse();                    // calculate (U_t * U )^-1 * U_t
+void print_mat(Mat mat);                  // print mat -- dubug using
+
+/* Pooling -- using while calc_depth */
+void mean_pooling( Mat &mat );			  // kernal 3*3 cal mean
+void max_pooling( Mat &mat );             // kernal 3*3 cal max
+void pooling_v( Mat &mat );               // values correction
+
+/* I/O operation */
+bool redirection(int argc, char* argv[]); // redirection input & output files
+bool load_img();                          // load image file
+bool load_light_source();                 // load lightsoucre form file
+void output();                            // output to *.ply
 
 int main(int argc, char* argv[]) {
 
@@ -43,14 +55,12 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
-
 bool redirection(int argc, char* argv[]) {
 	if (argc > 1) {
 		pic_name = string(argv[1]);
 	}
 	string file_name = "./test/" + pic_name + "/LightSource.txt";
 	string output_name = pic_name + ".ply";
-	//printf("%s\n", file_name.c_str());
 	freopen(file_name.c_str(), "r", stdin);
 	freopen(output_name.c_str(), "w", stdout);
 	return true;
@@ -73,7 +83,6 @@ bool load_img() {
 		ss << i;
 		string pic_num = ss.str();
 		string file_name = "./test/" + pic_name + "/pic" + pic_num + ".bmp";
-		//printf("%s\n", file_name.c_str());
 		imgs[i - 1] = imread(file_name, IMREAD_GRAYSCALE);
 	}
 	COL_MAX_NUM = imgs[0].cols;
@@ -181,54 +190,6 @@ void pooling_v( Mat &mat ){
 	}
 }
 void calc_depth() {
-	/*
-	depth = Mat(Mat::zeros(ROW_MAX_NUM, COL_MAX_NUM, CV_64FC(1)));
-
-	for (int u = 0; u < ROW_MAX_NUM; u++) {
-		for (int v = 0; v < COL_MAX_NUM; v++) {
-			double tmp = 0;
-			for(int x = 0; x < v; ++x){
-				Mat current = normal.col(x);
-				if (current.at<double>(2, 0) != 0) {
-					tmp += (-1) * current.at<double>(0, 0) / current.at<double>(2, 0);
-				}
-			}
-			for(int y = 0; y < u; ++y){
-				Mat current = normal.col(y * COL_MAX_NUM + v);
-				if (current.at<double>(2, 0) != 0) {
-					tmp += (-1) * current.at<double>(1, 0) / current.at<double>(2, 0);
-				}
-			}
-			depth.at<double>(u, v) = tmp;
-		}
-	}
-	max_pooling(depth);
-
-	Mat depth_2 = Mat::zeros(ROW_MAX_NUM, COL_MAX_NUM, CV_64FC(1));
-
-	for (int u = 0; u < ROW_MAX_NUM; u++) {
-		for (int v = 0; v < COL_MAX_NUM; v++) {
-			double tmp = 0;
-			for(int y = u; y < ROW_MAX_NUM; ++y){
-				Mat current = normal.col(y * COL_MAX_NUM + COL_MAX_NUM - 1);
-				if (current.at<double>(2, 0) != 0) {
-					tmp += (-1) * current.at<double>(1, 0) 
-					/ current.at<double>(2, 0);
-				}
-			}
-			for(int x = v; x < COL_MAX_NUM; ++x){
-				Mat current = normal.col(u * COL_MAX_NUM + x);
-				if (current.at<double>(2, 0) != 0) {
-					tmp += (-1) * current.at<double>(0, 0) 
-					/ current.at<double>(2, 0);
-				}
-			}
-			depth_2.at<double>(u, v) = tmp;
-		}
-	}
-	max_pooling(depth_2);
-	depth = (depth + depth_2) / 2;
-	*/
 	depth = Mat(Mat::zeros(ROW_MAX_NUM, COL_MAX_NUM, CV_64FC(1)));
 	for (int i = 1; i < ROW_MAX_NUM; i++) {
 		Mat current = normal.col(i * COL_MAX_NUM);
@@ -277,13 +238,12 @@ void calc_depth() {
 		}
 	}
 	mean_pooling(depth_2);
+
 	for (int i = 0; i < ROW_MAX_NUM; i++) {
 		for (int j = 0; j < COL_MAX_NUM; j++) {
 			depth.at<double>(i, j) = (depth.at<double>(i, j) + depth_2.at<double>(i, j)) / 2;
 		}
 	}
-
-	
 }
 
 void output() {
