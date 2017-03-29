@@ -89,12 +89,7 @@ bool load_light_source() {
 		Mat tmp = (Mat_<double>(1, 3) << x, y, z);
 		tmp.copyTo(lightsource.row(i - 1));
 	}
-	if (i == 6) {
-		return true;
-	}
-	else {
-		return false;
-	}
+	return true;
 }
 
 void calc_intensity() {
@@ -107,7 +102,6 @@ void calc_intensity() {
 			}
 		}
 	}
-	//print_mat(intensity);
 }
 
 void pseudo_inverse() {
@@ -138,7 +132,103 @@ void calc_normal() {
 	}
 }
 
+void mean_pooling( Mat &mat ){
+	for (int i = 1; i < ROW_MAX_NUM - 1; i++) {
+		for (int j = 1; j < COL_MAX_NUM - 1; j++) {
+			double tmp = (mat.at<double>(i, j) + mat.at<double>(i - 1, j) + mat.at<double>(i, j - 1)
+				+ mat.at<double>(i - 1, j - 1) + mat.at<double>(i + 1, j) + mat.at<double>(i, j + 1)
+				+ mat.at<double>(i + 1, j + 1) + mat.at<double>(i - 1, j + 1) + mat.at<double>(i + 1, j - 1)) / 9.0;
+			mat.at<double>(i, j) = tmp;
+		}
+	}
+}
+
+void max_pooling( Mat &mat ){
+	for (int i = 1; i < ROW_MAX_NUM - 1; i++) {
+		for (int j = 1; j < COL_MAX_NUM - 1; j++) {
+			double tmp = 0.0;
+			tmp = max(tmp,mat.at<double>(i, j));
+			tmp = max(tmp,mat.at<double>(i+1, j));
+			tmp = max(tmp,mat.at<double>(i, j+1));
+			tmp = max(tmp,mat.at<double>(i+1, j+1));
+			tmp = max(tmp,mat.at<double>(i-1, j));
+			tmp = max(tmp,mat.at<double>(i, j-1));
+			tmp = max(tmp,mat.at<double>(i-1, j-1));
+			tmp = max(tmp,mat.at<double>(i-1, j+1));
+			tmp = max(tmp,mat.at<double>(i+1, j-1));
+			mat.at<double>(i, j) = tmp;
+		}
+	}	
+}
+void pooling_v( Mat &mat ){
+	double tmp = 0.0, mean = 0.0;
+	int count = 0;
+	for (int i = 0; i < ROW_MAX_NUM; ++i){
+		for (int j = 0; j < COL_MAX_NUM; ++j){
+			if( mat.at<double>(i, j) < 0 ){
+				tmp += mat.at<double>(i, j);
+				count++;
+			}
+		}
+	}
+	mean = tmp / count;
+	for (int i = 0; i < ROW_MAX_NUM; ++i){
+		for (int j = 0; j < COL_MAX_NUM; ++j){
+			if( mat.at<double>(i, j) > 0 ){
+				mat.at<double>(i, j) = mean;
+			}
+		}
+	}
+}
 void calc_depth() {
+	/*
+	depth = Mat(Mat::zeros(ROW_MAX_NUM, COL_MAX_NUM, CV_64FC(1)));
+
+	for (int u = 0; u < ROW_MAX_NUM; u++) {
+		for (int v = 0; v < COL_MAX_NUM; v++) {
+			double tmp = 0;
+			for(int x = 0; x < v; ++x){
+				Mat current = normal.col(x);
+				if (current.at<double>(2, 0) != 0) {
+					tmp += (-1) * current.at<double>(0, 0) / current.at<double>(2, 0);
+				}
+			}
+			for(int y = 0; y < u; ++y){
+				Mat current = normal.col(y * COL_MAX_NUM + v);
+				if (current.at<double>(2, 0) != 0) {
+					tmp += (-1) * current.at<double>(1, 0) / current.at<double>(2, 0);
+				}
+			}
+			depth.at<double>(u, v) = tmp;
+		}
+	}
+	max_pooling(depth);
+
+	Mat depth_2 = Mat::zeros(ROW_MAX_NUM, COL_MAX_NUM, CV_64FC(1));
+
+	for (int u = 0; u < ROW_MAX_NUM; u++) {
+		for (int v = 0; v < COL_MAX_NUM; v++) {
+			double tmp = 0;
+			for(int y = u; y < ROW_MAX_NUM; ++y){
+				Mat current = normal.col(y * COL_MAX_NUM + COL_MAX_NUM - 1);
+				if (current.at<double>(2, 0) != 0) {
+					tmp += (-1) * current.at<double>(1, 0) 
+					/ current.at<double>(2, 0);
+				}
+			}
+			for(int x = v; x < COL_MAX_NUM; ++x){
+				Mat current = normal.col(u * COL_MAX_NUM + x);
+				if (current.at<double>(2, 0) != 0) {
+					tmp += (-1) * current.at<double>(0, 0) 
+					/ current.at<double>(2, 0);
+				}
+			}
+			depth_2.at<double>(u, v) = tmp;
+		}
+	}
+	max_pooling(depth_2);
+	depth = (depth + depth_2) / 2;
+	*/
 	depth = Mat(Mat::zeros(ROW_MAX_NUM, COL_MAX_NUM, CV_64FC(1)));
 	for (int i = 1; i < ROW_MAX_NUM; i++) {
 		Mat current = normal.col(i * COL_MAX_NUM);
@@ -162,6 +252,7 @@ void calc_depth() {
 			}
 		}
 	}
+	mean_pooling(depth);
 	Mat depth_2 = Mat::zeros(ROW_MAX_NUM, COL_MAX_NUM, CV_64FC(1));
 	for (int i = 1; i < COL_MAX_NUM; i++) {
 		Mat current = normal.col(i * ROW_MAX_NUM);
@@ -185,68 +276,14 @@ void calc_depth() {
 			}
 		}
 	}
-
+	mean_pooling(depth_2);
 	for (int i = 0; i < ROW_MAX_NUM; i++) {
 		for (int j = 0; j < COL_MAX_NUM; j++) {
 			depth.at<double>(i, j) = (depth.at<double>(i, j) + depth_2.at<double>(i, j)) / 2;
 		}
 	}
-	
-	/*
-	int bound = 10;
-	for (int i = 1; i < ROW_MAX_NUM - 1; i++) {
-		for (int j = 1; j < COL_MAX_NUM - 1; j++) {
-			double tmp = 0.0,  value = depth.at<double>(i, j);
-			int count = 0;
-			if (depth.at<double>(i, j) - value < bound && depth.at<double>(i, j) > -bound) {
-				tmp += depth.at<double>(i, j);
-				count++;
-			}
-			if (depth.at<double>(i - 1, j) - value < bound && depth.at<double>(i - 1, j) > -bound) {
-				tmp += depth.at<double>(i - 1, j);
-				count++;
-			}
-			if (depth.at<double>(i, j - 1) - value < bound && depth.at<double>(i, j - 1) > -bound) {
-				tmp += depth.at<double>(i, j - 1);
-				count++;
-			}
-			if (depth.at<double>(i - 1, j - 1) - value < bound && depth.at<double>(i - 1, j - 1) > -bound) {
-				tmp += depth.at<double>(i - 1, j - 1);
-				count++;
-			}
-			if (depth.at<double>(i + 1, j) - value < bound && depth.at<double>(i + 1, j) > -bound) {
-				tmp += depth.at<double>(i + 1, j);
-				count++;
-			}
-			if (depth.at<double>(i, j + 1) - value < bound && depth.at<double>(i, j + 1) > -bound) {
-				tmp += depth.at<double>(i, j + 1);
-				count++;
-			}
-			if (depth.at<double>(i + 1, j + 1) - value < bound && depth.at<double>(i + 1, j + 1) > -bound) {
-				tmp += depth.at<double>(i + 1, j + 1);
-				count++;
-			}
-			if (depth.at<double>(i - 1, j + 1) - value < bound && depth.at<double>(i - 1, j + 1) > -bound) {
-				tmp += depth.at<double>(i - 1, j + 1);
-				count++;
-			}
-			if (depth.at<double>(i + 1, j - 1) - value < bound && depth.at<double>(i + 1, j - 1) > -bound) {
-				tmp += depth.at<double>(i + 1, j - 1);
-				count++;
-			}
-			depth.at<double>(i, j) = tmp / count;
-		}
-	}
-	*/
-	for (int i = 1; i < ROW_MAX_NUM - 1; i++) {
-		for (int j = 1; j < COL_MAX_NUM - 1; j++) {
-			double tmp = (depth.at<double>(i, j) + depth.at<double>(i - 1, j) + depth.at<double>(i, j - 1)
-				+ depth.at<double>(i - 1, j - 1) + depth.at<double>(i + 1, j) + depth.at<double>(i, j + 1)
-				+ depth.at<double>(i + 1, j + 1) + depth.at<double>(i - 1, j + 1) + depth.at<double>(i + 1, j - 1)) / 9.0;
-			depth.at<double>(i, j) = tmp;
-		}
-	}
 
+	
 }
 
 void output() {
