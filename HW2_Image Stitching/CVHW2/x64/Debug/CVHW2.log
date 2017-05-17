@@ -1,0 +1,37 @@
+﻿  main.cpp
+c:\opencv\include\opencv2\core\mat.hpp(2585): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
+c:\opencv\include\opencv2\core\persistence.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
+c:\opencv\include\opencv2\core\utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
+c:\opencv\include\opencv2\core\utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
+c:\opencv\include\opencv2\imgproc.hpp(595): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(72): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(86): warning C4244: '=': conversion from 'unsigned __int64' to 'float', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(87): warning C4244: 'argument': conversion from 'float' to 'unsigned __int64', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(88): warning C4244: 'argument': conversion from 'float' to 'unsigned __int64', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(90): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(99): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(100): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(102): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(103): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(105): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(106): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(108): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(109): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(142): warning C4838: conversion from 'int' to 'float' requires a narrowing conversion
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(142): warning C4244: 'initializing': conversion from 'int' to 'float', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(149): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(264): warning C4244: 'argument': conversion from 'time_t' to 'unsigned int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(298): warning C4838: conversion from 'std::size_t' to 'float' requires a narrowing conversion
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(298): warning C4244: 'initializing': conversion from 'std::size_t' to 'float', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(300): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(317): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(317): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(318): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(318): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(319): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(319): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+c:\program files (x86)\microsoft visual studio 14.0\vc\include\utility(200): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+  c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(341): note: see reference to function template instantiation 'std::pair<int,float>::pair<int,double,void,0>(std::pair<int,double> &&) noexcept' being compiled
+  c:\users\bigba\desktop\nctu_cv\hw2_image stitching\cvhw2\main.cpp(341): note: see reference to function template instantiation 'std::pair<int,float>::pair<int,double,void,0>(std::pair<int,double> &&) noexcept' being compiled
+  CVHW2.vcxproj -> C:\Users\BIGBA\Desktop\NCTU_CV\HW2_Image Stitching\x64\Debug\CVHW2.exe
+  CVHW2.vcxproj -> C:\Users\BIGBA\Desktop\NCTU_CV\HW2_Image Stitching\x64\Debug\CVHW2.pdb (Full PDB)
