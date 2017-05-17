@@ -9,13 +9,11 @@
 #include <cmath>
 #include <io.h>
 
-
 using namespace cv;
 
 #define MAX_PIC_SIZE            10
 #define MAX_K                   2
 #define RANSAC_ROUND			3000				    // round of RANSAC
-#define THRESHOLD_GOODRESULT	10					    // distance less this threshold would consider as good match result
 #define MAX_POINT               2048
 
 std::string image_name;
@@ -209,9 +207,10 @@ void forward_warping(Mat img_1, Mat& img_2, Mat H) {
 	}
 }
 
-void backwardWarping(Mat img_1, Mat& img_2, Mat H ){
+void backward_warping(Mat img_1, Mat& img_2, Mat H ){
+	//Mat Trans = homogrphy_sample_to_target * H;
+	//Trans = Trans.inv();
 	Mat Trans = H.inv();
-
 	for (int i = 0; i < img_2.rows; i++){
 		for (int j = 0; j < img_2.cols; j++){
 			float data[] = { j, i, 1 };
@@ -247,14 +246,14 @@ int main() {
 	cal_sift(keypoint_sample, keypoint_target, image_sample, image_target, descriptor_sample, descriptor_target);
 	knn(descriptor_sample, descriptor_target);
 	ransac(keypoint_sample, keypoint_target, homogrphy_sample_to_target);
-	Mat test = Mat(image_target.rows, image_target.cols, CV_8UC3);
+	Mat test = Mat(image_target.rows+1000, image_target.cols+1000, CV_8UC3);
 	for (int i = 0; i < pic_num; ++i) {
 		printf("pic: %d\n", i + 1);
 		cal_sift(keypoints[i], keypoint_sample, image_puzzles[i], image_sample, descriptor_puzzles[i], descriptor_sample);
 		knn(descriptor_puzzles[i], descriptor_sample);
 		ransac(keypoints[i], keypoint_sample, homogrphy[i]);
-		forward_warping(image_puzzles[i], test, homogrphy[i]);
-		//backwardWarping(image_puzzles[i], test, homogrphy[i]);
+		//forward_warping(image_puzzles[i], test, homogrphy[i]);
+		backward_warping(image_puzzles[i], test, homogrphy[i]);
 		imshow("test", test);
 		waitKey(0);
 	}
