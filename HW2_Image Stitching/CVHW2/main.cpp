@@ -15,15 +15,14 @@ using namespace cv;
 #define MAX_PIC_SIZE            10
 #define MAX_K                   3
 #define RANSAC_ROUND			1000				    // round of RANSAC
-#define NUM_REQ_HOMOGRAPHY		4					    // required points to build a homography
-#define HOMOGRAPHY_H_HEIGHT    (NUM_REQ_HOMOGRAPHY<<1)	// height of H when build homography
-#define HOMOGRAPHY_H_WIDTH		9					    // width of H when build homography
-#define THRESHOLD_GOODRESULT	5					    // distance less this threshold would consider as good match result
+#define THRESHOLD_GOODRESULT	10					    // distance less this threshold would consider as good match result
+#define MAX_POIONT              2048
 
 std::string image_name;
 std::vector < KeyPoint>keypoints[MAX_PIC_SIZE];
 std::vector < KeyPoint> keypoint_sample;
 std::vector < KeyPoint> keypoint_target;
+std::vector < int > index_table[MAX_POIONT];
 int pic_num;
 
 // warp matrix
@@ -40,35 +39,17 @@ Mat descriptor_sample;
 Mat descriptor_target;
 Mat descriptor_puzzles[MAX_PIC_SIZE];
 
-// knn pair
-
-struct pair_node {
-	const int idx;
-	const int idx_base;
-	const int idx_target;
-
-	pair_node():idx(-1), idx_target(-1), idx_base(-1) {}
-	pair_node(int a, int b, int c) :idx(a), idx_base(b), idx_target(c) {}
-
-	static int get_base_idx(pair_node p) { return p.idx_base; }
-	static int get_target_idx(pair_node p) { return p.idx_target; }
-};
-
 bool cmp(std::pair<int, float> x, std::pair<int, float> y) {
 	return x.second < y.second;
 }
 
 bool load_image();
 bool cal_sift(std::vector < KeyPoint>& keypoints_1, std::vector < KeyPoint>& keypoints_2, Mat& img_1, Mat& img_2, Mat& descriptor_1, Mat& descriptor_2);
-bool knn(Mat& base, Mat& target, std::vector < pair_node >& knn_pair);
-void printde() {
-	std::cout << "debug" << std::endl;
-}
+bool knn(Mat base, Mat target);
+void printde() {std::cout << "debug" << std::endl;}
 void printMat(Mat M) {
-	for (size_t i = 0; i < M.rows; i++)
-	{
-		for (size_t j = 0; j < M.cols; j++)
-		{
+	for (size_t i = 0; i < M.rows; i++) {
+		for (size_t j = 0; j < M.cols; j++) {
 			std::cout << M.at<float>(i, j) << " ";
 		}
 		std::cout << std::endl;
@@ -76,23 +57,27 @@ void printMat(Mat M) {
 	std::cout << std::endl;
 }
 
-void ransac(std::vector < pair_node >& knn_pair, std::vector < KeyPoint>& kp_base, std::vector<KeyPoint>& kp_target, Mat& _best_affine) {
+void ransac( std::vector < KeyPoint>& kp_base, std::vector<KeyPoint>& kp_target, Mat& _best_affine) {
 
 	int max_cnt = 0;
 	for (int r = 0; r < RANSAC_ROUND; ++r) {
-		
-		float x[5], y[5], u[5][5], v[5][5], id;
-		for (size_t i = 0; i < 4; i++){
+
+		float x[5], y[5], u[5][5], v[5][5];
+		int hash[MAX_POIONT] = { 0 }, id;
+
+		for (int i = 0; i < 4; i++) {
 			id = rand() % kp_base.size();
+			while (hash[id]) {
+				id = rand() % kp_base.size();
+			}
+			hash[id] = 1;
 			x[i] = kp_base[id].pt.x;
 			y[i] = kp_base[id].pt.y;
-			 
-			int target_i = id*MAX_K;
-			for (size_t j = 0; j < MAX_K; j++){
-				u[i][j] = kp_target[knn_pair[target_i + j].idx_target].pt.x;
-				v[i][j] = kp_target[knn_pair[target_i + j].idx_target].pt.y;
+		
+			for (int j = 0; j < MAX_K; j++) {
+				u[i][j] = kp_target[index_table[id][j]].pt.x;
+				v[i][j] = kp_target[index_table[id][j]].pt.y;
 			}
-			
 		}
 
 		for (int i = 0; i < MAX_K; ++i) {
@@ -101,15 +86,15 @@ void ransac(std::vector < pair_node >& knn_pair, std::vector < KeyPoint>& kp_bas
 			for (int j = 0; j < MAX_K; ++j) {
 				int x2 = u[1][j];
 				int y2 = v[1][j];
-				for (int ii = 0; ii < MAX_K; ++ii) {
-					int x3 = u[2][ii];
-					int y3 = v[2][ii];
+				for (int k = 0; k < MAX_K; ++k) {
+					int x3 = u[2][k];
+					int y3 = v[2][k];
 					for (int jj = 0; jj < MAX_K; ++jj) {
 						int x4 = u[3][jj];
 						int y4 = v[3][jj];
-						/*
-						Mat A = Mat(8, 9, CV_32FC1);
 						
+						Mat A = Mat(8, 9, CV_32FC1);
+
 						float data1[] = { x[0], y[0], 1, 0, 0, 0, -x1*x[0], -x1*y[0], -x1 };
 						Mat(1, 9, CV_32FC1, data1).copyTo(A.row(0));
 						float data2[] = { 0, 0, 0, x[0], y[0], 1, -y1*x[0], -y1*y[0], -y1 };
@@ -127,131 +112,46 @@ void ransac(std::vector < pair_node >& knn_pair, std::vector < KeyPoint>& kp_bas
 						float data8[] = { 0, 0, 0, x[3], y[3], 1, -y4*x[3], -y4*y[3], -y4 };
 						Mat(1, 9, CV_32FC1, data8).copyTo(A.row(7));
 
-
-
-						
 						Mat AmatrixEigenValue = Mat::zeros(8, 9, CV_32FC1);
 						Mat AmatrixEigenVector = Mat::zeros(8, 9, CV_32FC1);
 						auto AmatrixTAmatrix = A.t()*A;
-						
+
 						eigen(AmatrixTAmatrix, AmatrixEigenValue, AmatrixEigenVector);
-						
+
 						Mat H = AmatrixEigenVector.row(8);
 						H = H.reshape(0, 3);
-						*/
-						float data1[] = { x1, x2, x3, y1, y2, y3 };
-						Mat A = Mat(2, 3, CV_32FC1, data1);
-						float data2[] = { x[0], x[1], x[2], y[0], y[1], y[2], 1, 1, 1 };
-						Mat B = Mat(3, 3, CV_32FC1, data2);
-						Mat H = A * B.inv();
-
 						int cnt = 0;
-						int size = kp_base.size();
-						//printf("sz = %d\n", size);
-						for (int kp = 0; kp < size; ++kp) {
-							int target_i = kp*MAX_K;
-							float xx = kp_target[knn_pair[target_i].idx_target].pt.x;
-							float yy = kp_target[knn_pair[target_i].idx_target].pt.y;
-
+						for (int kp = 0; kp <  kp_base.size(); ++kp) {
+							int xx = kp_target[ index_table[kp][0]].pt.x;
+							int yy = kp_target[index_table[kp][0]].pt.y;
+								
 							float kp_data[] = { kp_base[kp].pt.x, kp_base[kp].pt.y, 1.0 };
-							Mat Y = H*Mat(3, 1, CV_32FC1, kp_data);
-							
-							/*Y.at<float>(0, 0) = Y.at<float>(0, 0) / Y.at<float>(2, 0);
-							Y.at<float>(1, 0) = Y.at<float>(1, 0) / Y.at<float>(2, 0);
-							Y.at<float>(2, 0) = Y.at<float>(2, 0) / Y.at<float>(2, 0);
-*/
-							float dis = sqrt((Y.at<float>(0,0) - xx)*(Y.at<float>(0,0) - xx) + (Y.at<float>(1,0) - yy)*(Y.at<float>(1,0) - yy));
+							Mat Y = H * Mat(3, 1, CV_32FC1, kp_data);
+
+							int x_ = Y.at<float>(0, 0) / Y.at<float>(2, 0);
+							int y_ = Y.at<float>(1, 0) / Y.at<float>(2, 0);
+
+							float dis = sqrt((x_ - xx)*(x_ - xx)+ (y_ - yy)*(y_ - yy));
 							//printf("dis = %f\n", dis);
-							if (dis < 20) {
-								cnt++;
-							}
+							
+							if (dis < 50) cnt++;
 						}
 						if (cnt > max_cnt) {
 							max_cnt = cnt;
 							printf("cnt = %d\n", cnt);
-							printMat(H);
 							_best_affine = H;
-						}
-						if (max_cnt > (int)(0.28*kp_base.size()) ) {
-							_best_affine = H;
-							//printf("dis = %f\n", dis);
-							printf("cnt = %d\n", cnt);
-							printMat(H);
-							return;
 						}
 					}
 				}
 			}
 		}
-/*
-		for (int i = 0; i < 4; ++i) {
-			id = rand() % kp_base.size();
-			x[i] = kp_base[id].pt.x;
-			y[i] = kp_base[id].pt.y;
-			int target_i = knn_pair[id].idx_target;
-			u[i] = kp_target[target_i].pt.x;
-			v[i] = kp_target[target_i].pt.y;
-			printf("%f, %f, %f, %f\n", x[i], y[i], u[i], v[i]);
+		if (max_cnt > (int)(0.25*kp_base.size())) {
+			printMat(_best_affine);
+			return;
 		}
-
-		Mat A = Mat(8, 9, CV_32FC1);
-		for (int n = 0; n < 4; ++n) {
-			for (int i = 0; i < 8; ++i) {
-				
-				if (i == 0 && n == 0 ) {
-					float tmp[9] = { x[n], y[n], 1, 0, 0, 0, -u[n] * x[n], -u[n] * y[n], -u[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}
-				else if (i == 1 && n == 0) {
-					float tmp[9] = { 0, 0, 0, x[n], y[n], 1, -v[n] * x[n], -v[n] * y[n], -v[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}else if (i == 2 && n == 1 ) {
-					float tmp[9] = { x[n], y[n], 1, 0, 0, 0, -u[n] * x[n], -u[n] * y[n], -u[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}
-				else if (i == 3 && n == 1) {
-					float tmp[9] = { 0, 0, 0, x[n], y[n], 1, -v[n] * x[n], -v[n] * y[n], -v[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}else if (i == 4 && n == 2) {
-					float tmp[9] = { x[n], y[n], 1, 0, 0, 0, -u[n] * x[n], -u[n] * y[n], -u[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}
-				else if (i == 5 && n == 2) {
-					float tmp[9] = { 0, 0, 0, x[n], y[n], 1, -v[n] * x[n], -v[n] * y[n], -v[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}
-				else if (i == 6 && n == 3) {
-					float tmp[9] = { x[n], y[n], 1, 0, 0, 0, -u[n] * x[n], -u[n] * y[n], -u[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}else if (i == 7 && n == 3) {
-					float tmp[9] = { 0, 0, 0, x[n], y[n], 1, -v[n] * x[n], -v[n] * y[n], -v[n] };
-					Mat t = Mat(1, 9, CV_32FC1, tmp);
-					t.copyTo(A.row(i));
-				}
-			}
-		}
-		*/
-		/*
-		Mat AmatrixEigenValue = Mat::zeros(8, 9, CV_32FC1);
-		Mat AmatrixEigenVector = Mat::zeros(8, 9, CV_32FC1);
-		auto AmatrixTAmatrix = A.t()*A;
-		
-		eigen(AmatrixTAmatrix, AmatrixEigenValue, AmatrixEigenVector);
-		
-		
-		Mat H = AmatrixEigenVector.row(8);
-		H = H.reshape(0, 3);
-		_best_affine = H;
-		*/
 	}
 }
+
 
 
 bool isblack(Vec3b pixel) {
@@ -259,6 +159,134 @@ bool isblack(Vec3b pixel) {
 	return false;
 }
 
+void backwardWarping(Mat img_1, Mat trans, Mat& img_2)
+{
+	printMat(trans);
+	printMat(homogrphy_sample_to_target);
+	Mat homo = homogrphy_sample_to_target * trans;
+	homo = homo.inv();
+
+	for (int i = 0; i < img_2.rows; i++)
+	{
+		for (int j = 0; j < img_2.cols; j++)
+		{
+			float data[] = { j, i, 1 };
+			Mat B(3, 1, CV_32F, data );
+			Mat A = homo * B;
+			A = A / A.at<float>(2, 0);
+			if (0 <= A.at<float>(1, 0) && A.at<float>(1, 0) < img_1.rows && 0 <= A.at<float>(0, 0) && A.at<float>(0, 0) < img_1.cols)
+			{
+				if (img_1.at<Vec3b>((int)A.at<float>(1, 0), (int)A.at<float>(0, 0))[0] != 0 && img_1.at<Vec3b>((int)A.at<float>(1, 0), (int)A.at<float>(0, 0))[1] != 0 && img_1.at<Vec3b>((int)A.at<float>(1, 0), (int)A.at<float>(0, 0))[2] != 0) {
+					img_2.at<Vec3b>(i, j)[0] = img_1.at<Vec3b>((int)A.at<float>(1, 0), (int)A.at<float>(0, 0))[0];//g
+					img_2.at<Vec3b>(i, j)[1] = img_1.at<Vec3b>((int)A.at<float>(1, 0), (int)A.at<float>(0, 0))[1];//r
+					img_2.at<Vec3b>(i, j)[2] = img_1.at<Vec3b>((int)A.at<float>(1, 0), (int)A.at<float>(0, 0))[2];//b
+				}
+			}
+		}
+	}
+}
+using namespace std;
+Mat affineMappingMatrix(Mat puzzleDescriptor, vector<KeyPoint> puzzleKeypoints, vector<KeyPoint> sampleKeypoints)
+{
+	printf("---------------------This is another round to find the best Homography matrix---------------------\n");
+	int k = 3, kk, nn, inlier = 0, Th = 1, max_inlier = 0;
+	float diffVector1, diffVector2, totalDiff, sqrtTotalDiff;
+	vector<int> point(3);
+	Mat A(6, 6, CV_32F);
+	Mat U(6, 1, CV_32F);
+	Mat best_H(3, 3, CV_32F);
+	Mat H(3, 3, CV_32F);
+	Mat hOther(3, 1, CV_32F);
+	Mat A2(3, 1, CV_32F);
+	Mat A2Sure(3, 1, CV_32F);
+	for (int t = 0; t < 5000; t++)
+	{
+		do
+		{
+			point[0] = rand() % puzzleDescriptor.rows;
+			point[1] = rand() % puzzleDescriptor.rows;
+			point[2] = rand() % puzzleDescriptor.rows;
+
+		} while ((puzzleKeypoints[point[0]].pt.x == 0 && puzzleKeypoints[point[0]].pt.y == 0) ||
+			(puzzleKeypoints[point[1]].pt.x == 0 && puzzleKeypoints[point[1]].pt.y == 0) ||
+			(puzzleKeypoints[point[2]].pt.x == 0 && puzzleKeypoints[point[2]].pt.y == 0));
+
+		for (int r = 0, m = 0; r < k, m < k; r = r + 2, m++)
+		{
+			A.at<float>(r, 0) = puzzleKeypoints[point[m]].pt.x;
+			A.at<float>(r, 1) = puzzleKeypoints[point[m]].pt.y;
+			A.at<float>(r, 2) = 1;
+			A.at<float>(r, 3) = 0;
+			A.at<float>(r, 4) = 0;
+			A.at<float>(r, 5) = 0;
+			A.at<float>(r + 1, 0) = 0;
+			A.at<float>(r + 1, 1) = 0;
+			A.at<float>(r + 1, 2) = 0;
+			A.at<float>(r + 1, 3) = puzzleKeypoints[point[m]].pt.x;
+			A.at<float>(r + 1, 4) = puzzleKeypoints[point[m]].pt.y;
+			A.at<float>(r + 1, 5) = 1;
+			nn = rand() % 3;
+			switch (nn)
+			{
+			case 0:
+				kk = 0;
+				break;
+			case 1:
+				kk = 1;
+				break;
+			case 2:
+				kk = 2;
+				break;
+			}
+			U.at<float>(r, 0) = sampleKeypoints[ index_table[point[m]][kk]].pt.x;
+			U.at<float>(r + 1, 0) = sampleKeypoints[index_table[point[m]][kk]].pt.y;
+		}
+		Mat ATRAN = A.t();
+
+		Mat H1 = ((ATRAN*A).inv())*ATRAN*U;
+		H.at<float>(0, 0) = H1.at<float>(0, 0);
+		H.at<float>(0, 1) = H1.at<float>(1, 0);
+		H.at<float>(0, 2) = H1.at<float>(2, 0);
+		H.at<float>(1, 0) = H1.at<float>(3, 0);
+		H.at<float>(1, 1) = H1.at<float>(4, 0);
+		H.at<float>(1, 2) = H1.at<float>(5, 0);
+		H.at<float>(2, 0) = 0;
+		H.at<float>(2, 1) = 0;
+		H.at<float>(2, 2) = 1;
+		inlier = 0;
+		for (int i = 0; i < puzzleDescriptor.rows; i++)
+		{
+			if (puzzleKeypoints[i].pt.x != 0 && puzzleKeypoints[i].pt.y != 0)
+			{
+				hOther.at<float>(0, 0) = puzzleKeypoints[i].pt.x;
+				hOther.at<float>(1, 0) = puzzleKeypoints[i].pt.y;
+				hOther.at<float>(2, 0) = 1;
+				A2 = H*hOther;
+				/*This procedure is try to make sure A2(2,0) is definitely be 1*/
+				A2Sure = A2 / A2.at<float>(2, 0);
+				for (int j = 0; j < k; j++) {
+					diffVector1 = A2Sure.at<float>(0, 0) - sampleKeypoints[index_table[i][j]].pt.x;
+					diffVector1 = diffVector1*diffVector1;
+					diffVector2 = A2Sure.at<float>(1, 0) - sampleKeypoints[index_table[i][j]].pt.y;
+					diffVector2 = diffVector2*diffVector2;
+					totalDiff = diffVector1 + diffVector2;
+					sqrtTotalDiff = sqrt(totalDiff);
+					if (sqrtTotalDiff < Th)
+					{
+						inlier = inlier + 1;
+					}
+				}
+			}
+		}
+		if (inlier > max_inlier)
+		{
+			max_inlier = inlier;
+			H.copyTo(best_H);
+		}
+
+	}
+	return best_H;
+}
 int main() {
 
 	srand(time(NULL));
@@ -269,68 +297,30 @@ int main() {
 		return -1;
 	}
 
-	Mat train[MAX_PIC_SIZE], train2;
-	for (int i = 0; i < pic_num; ++i) {
-
-		cal_sift(keypoints[i], keypoint_sample, image_puzzles[i], image_sample, descriptor_puzzles[i], descriptor_sample);
-		
-		std::vector < pair_node > cur_knn_pair;
-		knn(descriptor_puzzles[i], descriptor_sample, cur_knn_pair);
-		ransac(cur_knn_pair, keypoints[i], keypoint_sample, train[i]);
-	}
-
+	// get homogrphy_sample_to_target
 	cal_sift(keypoint_sample, keypoint_target, image_sample, image_target, descriptor_sample, descriptor_target);
-	std::vector < pair_node > cur_knn_pair;
-	knn(descriptor_sample, descriptor_target, cur_knn_pair);
-	
-	ransac(cur_knn_pair, keypoint_sample, keypoint_target, train2);
-
-	//Mat result(image_target);
-
-	Mat result = Mat(image_sample.rows, image_sample.cols, CV_8UC3);
-	for (size_t n = 0; n < pic_num; n++)
-	{
-		for (size_t i = 0; i < image_puzzles[n].rows; i++)
-		{
-			for (size_t j = 0; j < image_puzzles[n].cols; j++)
-			{
-	
-				float tmp[3] = { i, j, 1.0 };
-				Mat X = Mat(3, 1, CV_32F, tmp );
-				if (isblack(image_puzzles[n].at<Vec3b>(i, j))) {
-					continue;
-				}
-
-				//printMat(X);
-				Mat x = train[n] * X;
-				//Mat x = train2 * train[n] * X;
-/*
-				x.at<float>(0,0) = x.at<float>(0,0) / x.at<float>(2, 0);
-				x.at<float>(1,0) = x.at<float>(1,0) / x.at<float>(2, 0);
-				x.at<float>(2,0) = x.at<float>(2,0) / x.at<float>(2, 0);*/
-			
-				//printMat(x);
-
-				if (x.at<float>(0) < 0 || x.at<float>(0) >= image_puzzles[n].cols || x.at<float>(1) < 0 || x.at<float>(1) >= image_puzzles[n].rows) {
-					continue;
-				}
-				result.at<Vec3b>(x.row(0).at<float>(0), x.row(1).at<float>(0))[0] = image_puzzles[n].at<Vec3b>(i, j)[0];
-				result.at<Vec3b>(x.row(0).at<float>(0), x.row(1).at<float>(0))[1] = image_puzzles[n].at<Vec3b>(i, j)[1];
-				result.at<Vec3b>(x.row(0).at<float>(0), x.row(1).at<float>(0))[2] = image_puzzles[n].at<Vec3b>(i, j)[2];
-			}
-		}
+	knn(descriptor_sample, descriptor_target);
+	//ransac(keypoint_sample, keypoint_target, homogrphy_sample_to_target);
+	homogrphy_sample_to_target = affineMappingMatrix(descriptor_sample, keypoint_sample, keypoint_target);
+	for (int i = 0; i < pic_num; ++i) {
+		printf("pic: %d\n", i + 1);
+		cal_sift(keypoints[i], keypoint_sample, image_puzzles[i], image_sample, descriptor_puzzles[i], descriptor_sample);
+		knn(descriptor_puzzles[i], descriptor_sample);
+		//ransac(keypoints[i], keypoint_sample, homogrphy[i]);
+		homogrphy[i] = affineMappingMatrix(descriptor_puzzles[i], keypoints[i], keypoint_sample);
+		backwardWarping(image_puzzles[i], homogrphy[i], image_target);
+		imshow("test", image_target);
+		waitKey(0);
 	}
 
-	imshow("remap result", result);
-	waitKey(0);
 	return 0;
 }
 
 
-bool knn(Mat& base, Mat& target, std::vector < pair_node >& knn_pair) {
+bool knn(Mat base, Mat target) {
 	
-	int pair_num = 0;
 	for (int i = 0; i < base.rows; ++i) {
+		index_table[i].clear();
 		std::vector< std::pair<int, float> > dis;
 		auto row_i = base.row(i);
 		for (int j = 0; j < target.rows; ++j) {
@@ -343,11 +333,13 @@ bool knn(Mat& base, Mat& target, std::vector < pair_node >& knn_pair) {
 
 		std::sort(dis.begin(), dis.end(), cmp);
 		for (int k = 0; k < MAX_K; ++k) {
-			knn_pair.push_back(pair_node(pair_num++, i, dis[k].first));
+			index_table[i].push_back(dis[k].first);
 		}
 	}
+	printf("K = 3 : %d %d %d\n", index_table[0][0], index_table[0][1], index_table[0][2]);
 	return true;
 }
+
 
 bool load_image() {
 	int obj;
@@ -424,3 +416,100 @@ bool cal_sift(std::vector < KeyPoint>& keypoints_1, std::vector < KeyPoint>& key
 	//waitKey(0);
 	return true;
 }
+
+//void ransac(std::vector < pair_node >& knn_pair, std::vector < KeyPoint>& kp_base, std::vector<KeyPoint>& kp_target, Mat& _best_affine) {
+//
+//	int max_cnt = 0;
+//	Mat H(3, 3, CV_32F, Scalar(0));
+//	for (int r = 0; r < 5000; ++r) {
+//
+//		int index[4] = { 0 };
+//		for (size_t i = 0; i < 4; i++){
+//			index[i] = rand() % knn_pair.size();
+//			for (size_t j = 0; j < 4; j++){
+//				if ( (i !=j ) && index[i] == index[j]){
+//					index[i] = rand() % knn_pair.size();
+//					j = 0;
+//				}
+//			}
+//		}
+//
+//		int X1 = kp_base[knn_pair[index[0]].idx_base].pt.x;
+//		int Y1 = kp_base[knn_pair[index[0]].idx_base].pt.y;
+//		int X2 = kp_base[knn_pair[index[1]].idx_base].pt.x;
+//		int Y2 = kp_base[knn_pair[index[1]].idx_base].pt.y;
+//		int X3 = kp_base[knn_pair[index[2]].idx_base].pt.x;
+//		int Y3 = kp_base[knn_pair[index[2]].idx_base].pt.y;
+//		int X4 = kp_base[knn_pair[index[3]].idx_base].pt.x;
+//		int Y4 = kp_base[knn_pair[index[3]].idx_base].pt.y;
+//
+//		int x1 = kp_target[knn_pair[index[0]].idx_target].pt.x;
+//		int y1 = kp_target[knn_pair[index[0]].idx_target].pt.y;
+//		int x2 = kp_target[knn_pair[index[1]].idx_target].pt.x;
+//		int y2 = kp_target[knn_pair[index[1]].idx_target].pt.y;
+//		int x3 = kp_target[knn_pair[index[2]].idx_target].pt.x;
+//		int y3 = kp_target[knn_pair[index[2]].idx_target].pt.y;
+//		int x4 = kp_target[knn_pair[index[3]].idx_target].pt.x;
+//		int y4 = kp_target[knn_pair[index[3]].idx_target].pt.y;
+//
+//		Mat A(8, 9, CV_32F, Scalar(0));
+//
+//		float data1[] = { X1, Y1, 1, 0, 0, 0, -x1*X1, -x1*Y1, -x1 };
+//		Mat(1, 9, CV_32FC1, data1).copyTo(A.row(0));
+//		float data2[] = { 0, 0, 0, X1, Y1, 1, -y1*X1, -y1*Y1, -y1 };
+//		Mat(1, 9, CV_32FC1, data2).copyTo(A.row(1));
+//		float data3[] = { X2, Y2, 1, 0, 0, 0, -x2*X2, -x2*Y2, -x2 };
+//		Mat(1, 9, CV_32FC1, data3).copyTo(A.row(2));
+//		float data4[] = { 0, 0, 0, X2, Y2, 1, -y2*X2, -y2*Y2, -y2 };
+//		Mat(1, 9, CV_32FC1, data4).copyTo(A.row(3));
+//		float data5[] = { X3, Y3, 1, 0, 0, 0, -x3*X3, -x3*Y3, -x3 };
+//		Mat(1, 9, CV_32FC1, data5).copyTo(A.row(4));
+//		float data6[] = { 0, 0, 0, X3, Y3, 1, -y3*X3, -y3*Y3, -y3 };
+//		Mat(1, 9, CV_32FC1, data6).copyTo(A.row(5));
+//		float data7[] = { X4, Y4, 1, 0, 0, 0, -x4*X4, -x4*Y4, -x4 };
+//		Mat(1, 9, CV_32FC1, data7).copyTo(A.row(6));
+//		float data8[] = { 0, 0, 0, X4, Y4, 1, -y4*X4, -y4*Y4, -y4 };
+//		Mat(1, 9, CV_32FC1, data8).copyTo(A.row(7));
+//
+//		//printMat(A);
+//
+//
+//		Mat AmatrixEigenValue, AmatrixEigenVector;
+//		eigen(A.t()*A, AmatrixEigenValue, AmatrixEigenVector);
+//
+//		Mat H = AmatrixEigenVector.row(8);
+//		H = H.reshape(0, 3);
+//
+//		int cnt = 0;
+//		int size = kp_base.size();
+//		//printf("sz = %d\n", size);
+//		for (int kp = 0; kp < size; ++kp) {
+//			float xx = kp_target[knn_pair[kp].idx_target].pt.x;
+//			float yy = kp_target[knn_pair[kp].idx_target].pt.y;
+//
+//			float kp_data[] = { kp_base[knn_pair[kp].idx_base].pt.x, kp_base[knn_pair[kp].idx_base].pt.y, 1.0 };
+//			Mat Y = H*Mat(3, 1, CV_32FC1, kp_data);
+//
+//			float x_ = Y.at<float>(0, 0) / Y.at<float>(2, 0);
+//			float y_ = Y.at<float>(1, 0) / Y.at<float>(2, 0);
+//
+//			float dis = (x_ - xx)*(x_ - xx) + (y_ - yy)*(y_ - yy);
+//			//printf("dis = %f\n", dis);
+//			if (dis < 10) {
+//				cnt++;
+//			}
+//		}
+//		if (cnt > max_cnt) {
+//			max_cnt = cnt;
+//			printf("cnt = %d\n", cnt);
+//			_best_affine = H;
+//		}
+//		if (max_cnt > (int)(0.5*kp_base.size())) {
+//			_best_affine = H;
+//			//printf("dis = %f\n", dis);
+//			printf("cnt = %d\n", cnt);
+//			printMat(H);
+//			return;
+//		}
+//	}
+//}
