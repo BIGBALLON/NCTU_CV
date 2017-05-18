@@ -14,10 +14,10 @@ using namespace cv;
 #define MAX_PIC_SIZE            10
 #define MAX_K                   1
 #define MAX_POINT               2048
-#define MAX_DIS                 (2.9)
-#define MAX_CAS                 (5000)
+#define MAX_DIS                 (2.8)
+#define MAX_CAS                 (3000)
 std::string image_name;
-std::vector < KeyPoint> keypoints[MAX_PIC_SIZE]; 
+std::vector < KeyPoint> keypoints[MAX_PIC_SIZE];
 std::vector < KeyPoint> keypoint_sample;
 std::vector < KeyPoint> keypoint_target;
 std::vector < int > index_table[MAX_POINT];
@@ -42,8 +42,8 @@ Mat descriptor_puzzles[MAX_PIC_SIZE];
 
 
 bool load_image();
-bool cal_sift(std::vector < KeyPoint>& keypoints_1, Mat& img_1, Mat& descriptor_1);
-bool knn(Mat base, Mat target,int k_cnt);
+bool cal_sift(std::vector < KeyPoint>& keypoints_1, Mat& img_1, Mat& descriptor_1, int save);
+bool knn(Mat base, Mat target, int k_cnt);
 void random_select(int id[5], int size, std::vector < KeyPoint> kp_base);
 
 void printde() { std::cout << "debug" << std::endl; }
@@ -52,7 +52,7 @@ bool cmp(std::pair<int, float> x, std::pair<int, float> y) {
 	return x.second < y.second;
 }
 
-Mat construct_mat( int X1, int X2, int X3, int X4, int Y1, int Y2, int Y3, int Y4, int x1, int x2, int x3, int x4, int y1, int y2, int y3, int y4 ) {
+Mat construct_mat(int X1, int X2, int X3, int X4, int Y1, int Y2, int Y3, int Y4, int x1, int x2, int x3, int x4, int y1, int y2, int y3, int y4) {
 	Mat A = Mat(8, 9, CV_32F);
 	float data1[] = { X1, Y1, 1, 0, 0, 0, -x1*X1, -x1*Y1, -x1 };
 	Mat(1, 9, CV_32FC1, data1).copyTo(A.row(0));
@@ -87,9 +87,9 @@ void ransac(std::vector < KeyPoint> kp_base, std::vector<KeyPoint> kp_target, Ma
 	int base_id[5], target_id[5][5];
 	int max_inlier = 0;
 
-	for (size_t cas = 0; cas < MAX_CAS; cas++){
-		if ((cas + 1) % 2000 == 0) {
-			printf("iteration: %d\n", cas+1);
+	for (size_t cas = 0; cas < MAX_CAS; cas++) {
+		if ((cas + 1) % 1000 == 0) {
+			printf("iteration: %d\n", cas + 1);
 		}
 		random_select(base_id, kp_base.size(), kp_base);
 
@@ -142,11 +142,14 @@ void ransac(std::vector < KeyPoint> kp_base, std::vector<KeyPoint> kp_target, Ma
 
 							float dis = sqrt((tx_ - tx)*(tx_ - tx) + (ty_ - ty)*(ty_ - ty));
 							//printf("dis = %f\n", dis);
-							if (dis < MAX_DIS) inlier_cnt++;
+							if (target != 0) {
+								if (dis < target) inlier_cnt++;
+							}
+							else if (dis < MAX_DIS) inlier_cnt++;
 						}
 						if (inlier_cnt > max_inlier) {
 							max_inlier = inlier_cnt;
-							/*printf("inlier_cnt = %d      %f%% \n", max_inlier, (double)max_inlier / kp_base.size() * 100);*/
+							//printf("inlier_cnt = %d      %f%% \n", max_inlier, (double)max_inlier / kp_base.size() * 100);
 							_best_H = H;
 						}
 					}
@@ -157,7 +160,7 @@ void ransac(std::vector < KeyPoint> kp_base, std::vector<KeyPoint> kp_target, Ma
 			break;
 		}
 	}
-	printf("inlier_cnt = %d      %f%% \n", max_inlier, (double)max_inlier/ kp_base.size()*100);
+	printf("inlier_cnt = %d      %f%% \n", max_inlier, (double)max_inlier / kp_base.size() * 100);
 	printMat(_best_H);
 }
 
@@ -189,12 +192,10 @@ void forward_warping(Mat img_1, Mat& img_2, Mat H) {
 	}
 }
 
-void backward_warping(Mat img_1, Mat& img_2, Mat H ){
-	//Mat Trans = homogrphy_sample_to_target * H;
-	//Trans = Trans.inv();
+void backward_warping(Mat img_1, Mat& img_2, Mat H) {
 	Mat Trans = H.inv();
-	for (int i = 0; i < img_2.rows; i++){
-		for (int j = 0; j < img_2.cols; j++){
+	for (int i = 0; i < img_2.rows; i++) {
+		for (int j = 0; j < img_2.cols; j++) {
 			float data[] = { j, i, 1 };
 			Mat Y = Trans * Mat(3, 1, CV_32F, data);
 			Y = Y / Y.at<float>(2, 0);
@@ -202,7 +203,7 @@ void backward_warping(Mat img_1, Mat& img_2, Mat H ){
 			int fx = Y.at<float>(0, 0);
 			int fy = Y.at<float>(1, 0);
 
-			if (0 <= fy && fy < img_1.rows && 0 <= fx && fx < img_1.cols){
+			if (0 <= fy && fy < img_1.rows && 0 <= fx && fx < img_1.cols) {
 				if (img_1.at<Vec3b>(fy, fx)[0] != 0 && img_1.at<Vec3b>(fy, fx)[1] != 0 && img_1.at<Vec3b>(fy, fx)[2] != 0) {
 
 					img_2.at<Vec3b>(i, j)[0] = img_1.at<Vec3b>(fy, fx)[0]; //g
@@ -214,18 +215,27 @@ void backward_warping(Mat img_1, Mat& img_2, Mat H ){
 	}
 }
 
-void find_featurepoints(Mat descriptors_1, Mat descriptors_2, Mat& good_pairs)
+void find_featurepoints(std::vector<KeyPoint> keypoints_1, std::vector<KeyPoint> keypoints_2, Mat descriptors_1, Mat descriptors_2, Mat& good_pairs)
 {
 	std::vector<int> good_indices;
 	int num_good = 0;
-	double threashold = 5.0;
-	while (num_good < 15) {
+	double threashold = 5;
+	while (num_good < 20) {
 		for (int i = 0; index_table[i].size(); i++) {
-			double dist1 = norm(descriptors_1.row(i), descriptors_2.row(index_table[i][0]), NORM_L2);
-			double dist2 = norm(descriptors_1.row(i), descriptors_2.row(index_table[i][1]), NORM_L2);
-			if (dist2 / dist1 > threashold) {
-				num_good++;
-				good_indices.push_back(i);
+			bool same_point = false;
+			std::vector<int>::iterator it;
+			for (it = good_indices.begin(); it != good_indices.end(); ++it) {
+				if (keypoints_1.at(*it).pt == keypoints_1.at(i).pt) {
+					same_point = true;
+				}
+			}
+			if (!same_point) {
+				double dist1 = norm(descriptors_1.row(i), descriptors_2.row(index_table[i][0]), NORM_L2);
+				double dist2 = norm(descriptors_1.row(i), descriptors_2.row(index_table[i][1]), NORM_L2);
+				if (dist2 / dist1 > threashold) {
+					num_good++;
+					good_indices.push_back(i);
+				}
 			}
 		}
 		threashold -= 0.25;
@@ -237,7 +247,7 @@ void find_featurepoints(Mat descriptors_1, Mat descriptors_2, Mat& good_pairs)
 	}
 }
 
-void make_a(Mat& A, Mat good_pairs, std::vector<KeyPoint> keypoints_1, std::vector<KeyPoint> keypoints_2){	
+void make_a(Mat& A, Mat good_pairs, std::vector<KeyPoint> keypoints_1, std::vector<KeyPoint> keypoints_2) {
 	int RandIndex[4] = { 0 };
 	for (int i = 0; i < 4; i++) {
 		RandIndex[i] = rand() % good_pairs.rows;
@@ -272,9 +282,9 @@ void make_a(Mat& A, Mat good_pairs, std::vector<KeyPoint> keypoints_1, std::vect
 	A = construct_mat(X1, X2, X3, X4, Y1, Y2, Y3, Y4, x1, x2, x3, x4, y1, y2, y3, y4);
 }
 
-void get_homogrphy_sample_to_target(Mat& homography_matrix){
+void get_homogrphy_sample_to_target(std::vector<KeyPoint> keypoints_1, std::vector<KeyPoint> keypoints_2, Mat descriptors_1, Mat descriptors_2, Mat& homography_matrix) {
 	Mat good_pairs;
-	find_featurepoints(descriptor_sample, descriptor_target, good_pairs);
+	find_featurepoints(keypoints_1, keypoints_2, descriptors_1, descriptors_2, good_pairs);
 
 	int num_inliners = 0;
 	Mat H(3, 3, CV_32F, Scalar(0));
@@ -282,14 +292,14 @@ void get_homogrphy_sample_to_target(Mat& homography_matrix){
 	while (random_times > 0) {
 		Mat A(3, 3, CV_32F, Scalar(0));
 
-		make_a(A, good_pairs, keypoint_sample, keypoint_target);
+		make_a(A, good_pairs, keypoints_1, keypoints_2);
 		int cnt = 0;
 
 		for (int i = 0; i < good_pairs.rows; i++) {
-			int X = keypoint_sample.at(good_pairs.at<int>(i, 0)).pt.x;
-			int x = keypoint_target.at(good_pairs.at<int>(i, 1)).pt.x;
-			int Y = keypoint_sample.at(good_pairs.at<int>(i, 0)).pt.y;
-			int y = keypoint_target.at(good_pairs.at<int>(i, 1)).pt.y;
+			int X = keypoints_1.at(good_pairs.at<int>(i, 0)).pt.x;
+			int x = keypoints_2.at(good_pairs.at<int>(i, 1)).pt.x;
+			int Y = keypoints_1.at(good_pairs.at<int>(i, 0)).pt.y;
+			int y = keypoints_2.at(good_pairs.at<int>(i, 1)).pt.y;
 
 			Mat this_xy = (Mat_<float>(3, 1) << X, Y, 1);
 			Mat that_xy = A * this_xy;
@@ -318,6 +328,7 @@ void get_homogrphy_sample_to_target(Mat& homography_matrix){
 int main() {
 
 	srand(time(NULL));
+
 	// load image
 	if (load_image()) printf("Load Image Successful.\n");
 	else {
@@ -326,29 +337,25 @@ int main() {
 	}
 
 	// get homogrphy_sample_to_target
-	cal_sift(keypoint_sample, image_sample, descriptor_sample);
-	cal_sift(keypoint_target, image_target, descriptor_target);
-	knn(descriptor_sample, descriptor_target,2);
-	get_homogrphy_sample_to_target(homogrphy_sample_to_target);
-
-	
-	//Mat test = Mat(image_target.rows, image_target.cols, CV_8UC3);
-	//backward_warping(image_sample, test, homogrphy_sample_to_target);
-	//imshow("test", test);
-	//waitKey(0);
-	//
-	//return 0;
+	cal_sift(keypoint_sample, image_sample, descriptor_sample, 1);
+	cal_sift(keypoint_target, image_target, descriptor_target, 0);
+	knn(descriptor_sample, descriptor_target, 2);
+	get_homogrphy_sample_to_target(keypoint_sample, keypoint_target, descriptor_sample, descriptor_target, homogrphy_sample_to_target);
 
 	for (int i = 0; i < pic_num; ++i) {
 		printf("pic: %d\n", i + 1);
-		cal_sift(keypoints[i], image_puzzles[i], descriptor_puzzles[i]);
+		cal_sift(keypoints[i], image_puzzles[i], descriptor_puzzles[i], 0);
 		knn(descriptor_puzzles[i], descriptor_sample, MAX_K);
 		ransac(keypoints[i], keypoint_sample, homogrphy[i]);
-		//forward_warping(image_puzzles[i], test, homogrphy[i]);
+		//forward_warping(image_puzzles[i], image_target, homogrphy_sample_to_target * homogrphy[i]);
 		backward_warping(image_puzzles[i], image_target, homogrphy_sample_to_target * homogrphy[i]);
+		imwrite(image_name + std::string("warp") + std::to_string(i) + std::string(".bmp"), image_target);
 	}
-	imshow("test", image_target);
+
+	imshow(image_name + "_result", image_target);
+	imwrite(image_name + "_backward.bmp", image_target);
 	waitKey(0);
+
 	return 0;
 }
 
@@ -413,12 +420,12 @@ bool load_image() {
 }
 
 
-bool cal_sift(std::vector < KeyPoint>& keypoints_1, Mat& img_1, Mat& descriptor_1) {
+bool cal_sift(std::vector < KeyPoint>& keypoints_1, Mat& img_1, Mat& descriptor_1, int save) {
 	// source image
-	if (!img_1.data) { std::cout << ".." << std::endl; return false;}
+	if (!img_1.data) { std::cout << ".." << std::endl; return false; }
 
 	//SIFT feature detector and feature extractor
-	Ptr < xfeatures2d::SIFT>detectorSIFT = xfeatures2d::SIFT::create(2500);
+	Ptr < xfeatures2d::SIFT>detectorSIFT = xfeatures2d::SIFT::create();
 	Ptr < xfeatures2d::SIFT>extractorSIFT = xfeatures2d::SIFT::create();
 
 	detectorSIFT->detect(img_1, keypoints_1);
@@ -426,9 +433,7 @@ bool cal_sift(std::vector < KeyPoint>& keypoints_1, Mat& img_1, Mat& descriptor_
 	Mat img_1_keypoints;
 	drawKeypoints(img_1, keypoints_1, img_1_keypoints, Scalar::all(-1), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 
-	//imshow("SIFT_IMG", img_1_keypoints);
-	imwrite("SIFT_IMG.bmp", img_1_keypoints);
-	int key1 = (int)keypoints_1.size();
+	if (save) imwrite(image_name + "_sift.bmp", img_1_keypoints);
 
 	// Feature descriptor computation
 	extractorSIFT->compute(img_1, keypoints_1, descriptor_1);
