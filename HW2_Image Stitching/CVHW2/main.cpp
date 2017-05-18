@@ -10,16 +10,14 @@
 #include <io.h>
 
 using namespace cv;
-using namespace std;
 
 #define MAX_PIC_SIZE            10
 #define MAX_K                   1
-#define RANSAC_ROUND			3000				    // round of RANSAC
 #define MAX_POINT               2048
 #define MAX_DIS                 (2.9)
 #define MAX_CAS                 (5000)
 std::string image_name;
-std::vector < KeyPoint>keypoints[MAX_PIC_SIZE]; 
+std::vector < KeyPoint> keypoints[MAX_PIC_SIZE]; 
 std::vector < KeyPoint> keypoint_sample;
 std::vector < KeyPoint> keypoint_target;
 std::vector < int > index_table[MAX_POINT];
@@ -41,41 +39,17 @@ Mat descriptor_sample;
 Mat descriptor_target;
 Mat descriptor_puzzles[MAX_PIC_SIZE];
 
-bool cmp(std::pair<int, float> x, std::pair<int, float> y) {
-	return x.second < y.second;
-}
+
 
 bool load_image();
-bool cal_sift(std::vector < KeyPoint>& keypoints_1, std::vector < KeyPoint>& keypoints_2, Mat& img_1, Mat& img_2, Mat& descriptor_1, Mat& descriptor_2);
+bool cal_sift(std::vector < KeyPoint>& keypoints_1, Mat& img_1, Mat& descriptor_1);
 bool knn(Mat base, Mat target,int k_cnt);
-void printde() { std::cout << "debug" << std::endl; }
-void printMat(Mat M) {
-	std::cout << "[";
-	for (size_t i = 0; i < M.rows; i++) {
-		for (size_t j = 0; j < M.cols; j++) {
-			if (j != 0) std::cout << " ";
-			std::cout << M.at<float>(i, j);
-			
-		}
-		if( i < M.rows - 1 ) std::cout << std::endl;
-		else std::cout << "]" << std::endl;
-	}
-	std::cout << std::endl;
-}
+void random_select(int id[5], int size, std::vector < KeyPoint> kp_base);
 
-void random_select( int id[5], int size, std::vector < KeyPoint> kp_base) {
-	memset(hash_table, 0, sizeof(hash_table));
-	for (size_t i = 1; i <= 4; i++) {
-		int rand_num = rand() % size;
-		while (true) {
-			rand_num = rand() % size;
-			if (kp_base[rand_num].pt.x == 0 && kp_base[rand_num].pt.y == 0) continue;
-			if (hash_table[rand_num] != 0) continue;
-			else break;
-		}
-		hash_table[rand_num] = 1;
-		id[i] = rand_num;
-	}
+void printde() { std::cout << "debug" << std::endl; }
+void printMat(Mat M);
+bool cmp(std::pair<int, float> x, std::pair<int, float> y) {
+	return x.second < y.second;
 }
 
 Mat construct_mat( int X1, int X2, int X3, int X4, int Y1, int Y2, int Y3, int Y4, int x1, int x2, int x3, int x4, int y1, int y2, int y3, int y4 ) {
@@ -240,9 +214,9 @@ void backward_warping(Mat img_1, Mat& img_2, Mat H ){
 	}
 }
 
-void findFeaturepoints(Mat descriptors_1, Mat descriptors_2, Mat& good_pairs)
+void find_featurepoints(Mat descriptors_1, Mat descriptors_2, Mat& good_pairs)
 {
-	vector<int> good_indices;
+	std::vector<int> good_indices;
 	int num_good = 0;
 	double threashold = 5.0;
 	while (num_good < 15) {
@@ -263,9 +237,7 @@ void findFeaturepoints(Mat descriptors_1, Mat descriptors_2, Mat& good_pairs)
 	}
 }
 
-void ranSelectAndMakeA(Mat& A, Mat good_pairs, vector<KeyPoint> keypoints_1, vector<KeyPoint> keypoints_2)
-{
-	//std::cout << "number of good pairs: " << good_pairs.rows << std::endl;
+void make_a(Mat& A, Mat good_pairs, std::vector<KeyPoint> keypoints_1, std::vector<KeyPoint> keypoints_2){	
 	int RandIndex[4] = { 0 };
 	for (int i = 0; i < 4; i++) {
 		RandIndex[i] = rand() % good_pairs.rows;
@@ -300,42 +272,39 @@ void ranSelectAndMakeA(Mat& A, Mat good_pairs, vector<KeyPoint> keypoints_1, vec
 	A = construct_mat(X1, X2, X3, X4, Y1, Y2, Y3, Y4, x1, x2, x3, x4, y1, y2, y3, y4);
 }
 
-int calInliners(Mat H, Mat good_pairs, vector<KeyPoint> keypoints_1, vector<KeyPoint> keypoints_2){
-	int num_inliners = 0;
+void get_homogrphy_sample_to_target(Mat& homography_matrix){
+	Mat good_pairs;
+	find_featurepoints(descriptor_sample, descriptor_target, good_pairs);
 
-	for (int i = 0; i < good_pairs.rows; i++) {
-		int X = keypoints_1.at(good_pairs.at<int>(i, 0)).pt.x;
-		int x = keypoints_2.at(good_pairs.at<int>(i, 1)).pt.x;
-		int Y = keypoints_1.at(good_pairs.at<int>(i, 0)).pt.y;
-		int y = keypoints_2.at(good_pairs.at<int>(i, 1)).pt.y;
-
-		Mat this_xy = (Mat_<float>(3, 1) << X, Y, 1);
-		Mat that_xy = H * this_xy;
-
-		float x_ = that_xy.at<float>(0, 0) / that_xy.at<float>(2, 0);
-		float y_ = that_xy.at<float>(1, 0) / that_xy.at<float>(2, 0);
-
-		float distance = (x - x_)*(x - x_) + (y - y_)*(y - y_);
-		if (distance < 0.8) {
-			num_inliners++;
-		}
-	}
-
-	return num_inliners;
-}
-
-void doRANSAC(Mat good_pairs, vector<KeyPoint> keypoints_1, vector<KeyPoint> keypoints_2, Mat& homography_matrix)
-{
 	int num_inliners = 0;
 	Mat H(3, 3, CV_32F, Scalar(0));
 	int random_times = 100;
 	while (random_times > 0) {
 		Mat A(3, 3, CV_32F, Scalar(0));
 
-		ranSelectAndMakeA(A, good_pairs, keypoints_1, keypoints_2);
-		int s = calInliners(A, good_pairs, keypoints_1, keypoints_2);
-		if (num_inliners < s) {
-			num_inliners = s;
+		make_a(A, good_pairs, keypoint_sample, keypoint_target);
+		int cnt = 0;
+
+		for (int i = 0; i < good_pairs.rows; i++) {
+			int X = keypoint_sample.at(good_pairs.at<int>(i, 0)).pt.x;
+			int x = keypoint_target.at(good_pairs.at<int>(i, 1)).pt.x;
+			int Y = keypoint_sample.at(good_pairs.at<int>(i, 0)).pt.y;
+			int y = keypoint_target.at(good_pairs.at<int>(i, 1)).pt.y;
+
+			Mat this_xy = (Mat_<float>(3, 1) << X, Y, 1);
+			Mat that_xy = A * this_xy;
+
+			float x_ = that_xy.at<float>(0, 0) / that_xy.at<float>(2, 0);
+			float y_ = that_xy.at<float>(1, 0) / that_xy.at<float>(2, 0);
+
+			float distance = (x - x_)*(x - x_) + (y - y_)*(y - y_);
+			if (distance < 0.8) {
+				cnt++;
+			}
+		}
+
+		if (num_inliners < cnt) {
+			num_inliners = cnt;
 			A.copyTo(H);
 		}
 
@@ -343,14 +312,7 @@ void doRANSAC(Mat good_pairs, vector<KeyPoint> keypoints_1, vector<KeyPoint> key
 	}
 
 	H.copyTo(homography_matrix);
-
-
-}
-void get_homogrphy_sample_to_target(Mat img_1, Mat img_2, Mat& homography_matrix){
-	Mat good_pairs;
-	findFeaturepoints(descriptor_sample, descriptor_target, good_pairs);
-	doRANSAC(good_pairs, keypoint_sample, keypoint_target, homography_matrix);
-
+	printMat(homography_matrix);
 }
 
 int main() {
@@ -363,16 +325,12 @@ int main() {
 		return -1;
 	}
 
-	//float a[] = { 0.65742326, 0.0027033386, 0.052302338, 0.00064962043, 0.66037607, -0.13564722, -7.1111785e-06, -4.8385864e-06, 0.33249769 };
-	//homogrphy_sample_to_target = Mat(3, 3, CV_32F, a);
-
-
 	// get homogrphy_sample_to_target
-	cal_sift(keypoint_sample, keypoint_target, image_sample, image_target, descriptor_sample, descriptor_target);
+	cal_sift(keypoint_sample, image_sample, descriptor_sample);
+	cal_sift(keypoint_target, image_target, descriptor_target);
 	knn(descriptor_sample, descriptor_target,2);
-	//ransac(keypoint_sample, keypoint_target, homogrphy_sample_to_target);
-	get_homogrphy_sample_to_target(image_sample, image_target, homogrphy_sample_to_target);
-	printMat(homogrphy_sample_to_target);
+	get_homogrphy_sample_to_target(homogrphy_sample_to_target);
+
 	
 	//Mat test = Mat(image_target.rows, image_target.cols, CV_8UC3);
 	//backward_warping(image_sample, test, homogrphy_sample_to_target);
@@ -383,7 +341,7 @@ int main() {
 
 	for (int i = 0; i < pic_num; ++i) {
 		printf("pic: %d\n", i + 1);
-		cal_sift(keypoints[i], keypoint_sample, image_puzzles[i], image_sample, descriptor_puzzles[i], descriptor_sample);
+		cal_sift(keypoints[i], image_puzzles[i], descriptor_puzzles[i]);
 		knn(descriptor_puzzles[i], descriptor_sample, MAX_K);
 		ransac(keypoints[i], keypoint_sample, homogrphy[i]);
 		//forward_warping(image_puzzles[i], test, homogrphy[i]);
@@ -455,39 +413,55 @@ bool load_image() {
 }
 
 
-bool cal_sift(std::vector < KeyPoint>& keypoints_1, std::vector < KeyPoint>& keypoints_2, Mat& img_1, Mat& img_2, Mat& descriptor_1, Mat& descriptor_2) {
+bool cal_sift(std::vector < KeyPoint>& keypoints_1, Mat& img_1, Mat& descriptor_1) {
 	// source image
-
-	if (!img_1.data || !img_2.data) {
-		std::cout << ".." << std::endl; return false;
-	}
+	if (!img_1.data) { std::cout << ".." << std::endl; return false;}
 
 	//SIFT feature detector and feature extractor
 	Ptr < xfeatures2d::SIFT>detectorSIFT = xfeatures2d::SIFT::create(2500);
 	Ptr < xfeatures2d::SIFT>extractorSIFT = xfeatures2d::SIFT::create();
 
 	detectorSIFT->detect(img_1, keypoints_1);
-	detectorSIFT->detect(img_2, keypoints_2);
 
-	Mat img_1_keypoints, img_2_keypoints;
+	Mat img_1_keypoints;
 	drawKeypoints(img_1, keypoints_1, img_1_keypoints, Scalar::all(-1), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-	drawKeypoints(img_2, keypoints_2, img_2_keypoints, Scalar::all(-1), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 
-	//imshow("INPUT_IMG", img_1);
 	//imshow("SIFT_IMG", img_1_keypoints);
-	//imshow("SIFT_IMG2", img_2_keypoints);
 	imwrite("SIFT_IMG.bmp", img_1_keypoints);
-	imwrite("SIFT_IMG2.bmp", img_2_keypoints);
 	int key1 = (int)keypoints_1.size();
-	int key2 = (int)keypoints_2.size();
 
 	// Feature descriptor computation
 	extractorSIFT->compute(img_1, keypoints_1, descriptor_1);
-	extractorSIFT->compute(img_2, keypoints_2, descriptor_2);
 
-	printf("Descriptor1=[%d,%d] \nDescriptor2=[%d,%d]\n", descriptor_1.size().height, descriptor_1.size().width,
-		descriptor_2.size().height, descriptor_2.size().width);
-
+	printf("Descriptor=[%d,%d]\n", descriptor_1.size().height, descriptor_1.size().width);
 	//waitKey(0);
 	return true;
+}
+
+void printMat(Mat M) {
+	std::cout << "[";
+	for (size_t i = 0; i < M.rows; i++) {
+		for (size_t j = 0; j < M.cols; j++) {
+			if (j != 0) std::cout << " ";
+			std::cout << M.at<float>(i, j);
+
+		}
+		if (i < M.rows - 1) std::cout << std::endl;
+		else std::cout << "]" << std::endl;
+	}
+	std::cout << std::endl;
+}
+void random_select(int id[5], int size, std::vector < KeyPoint> kp_base) {
+	memset(hash_table, 0, sizeof(hash_table));
+	for (size_t i = 1; i <= 4; i++) {
+		int rand_num = rand() % size;
+		while (true) {
+			rand_num = rand() % size;
+			if (kp_base[rand_num].pt.x == 0 && kp_base[rand_num].pt.y == 0) continue;
+			if (hash_table[rand_num] != 0) continue;
+			else break;
+		}
+		hash_table[rand_num] = 1;
+		id[i] = rand_num;
+	}
 }
